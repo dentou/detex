@@ -15,5 +15,5 @@ conda activate detex_cpu
 ## Download data and annotations
 ```bash
 chmod +x scripts/download_cocoval.sh
-./download_cocoval.sh
+./scripts/download_cocoval.sh
 ```
