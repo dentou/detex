@@ -13,3 +13,5 @@ dependencies:
   - tqdm
   - jupyterlab
   - matplotlib
+  - seaborn
+  - pycocotools
