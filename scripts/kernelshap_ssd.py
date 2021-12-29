@@ -18,6 +18,10 @@ from detex.utils.convert import tensorimg_to_npimg
 
 from tqdm.auto import tqdm
 
+import seaborn as sns
+sns.reset_orig()
+sns.set(rc={"savefig.bbox": "tight", "figure.dpi": 300, "savefig.dpi": 300})
+
 @torch.no_grad()
 def kernelshap(img, segment_mask, model, box_id, box_attr, seed):
 
@@ -139,7 +143,7 @@ if __name__ == "__main__":
                 ["original_image", "blended_heat_map"],
                 ["all", "all"],
                 show_colorbar=True,
-                alpha_overlay=0.85,
+                alpha_overlay=0.5,
                 fig_size=(8, 8),
                 titles=[f"[{box_id}]({box_num}){idx_to_class[class_label]}: {score}", "KSHAP"],
                 outlier_perc=1,
