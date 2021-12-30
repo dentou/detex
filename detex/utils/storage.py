@@ -56,6 +56,31 @@ def save_attribution(attribution: np.ndarray, filepath: str, meta: dict):
         g_box_id.require_dataset(str(box_attr), data=attribution, shape=attribution.shape, dtype=attribution.dtype)
 
 
+
+def allkeys(obj, leaves_only=False):
+    "Recursively find all keys in an h5py.Group."
+    keys = ()
+
+    if not leaves_only or (leaves_only and isinstance(obj, h5py.Dataset)):
+        keys += (obj.name,)
+
+    if isinstance(obj, h5py.Group):
+        for _, value in obj.items():
+            keys += allkeys(value, leaves_only=leaves_only)
+
+    return keys
+
+def collect_metas(hfile):
+    keys = allkeys(hfile, leaves_only=True)
+    metas = []
+    for k in keys:
+        _, img_id, box_id, box_attr = k.split("/")
+        img_id, box_id, box_attr = int(img_id), int(box_id), int(box_attr)
+        metas.append({"img_id": img_id, "box_id": box_id, "box_attr": box_attr})
+
+    return metas
+
+
 def load_attribution(filepath, meta):
     """Load attribution
 

@@ -1,7 +1,10 @@
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
-
+import torch
+from captum.attr import visualization as captumvis
+import os
+from .convert import tensorimg_to_npimg
 
 
 def draw_img_boxes(img, idx_to_class, gt=None, pred=None):
@@ -101,3 +104,71 @@ def show_imgs(imgs):
         # img = TF.to_pil_image(img)
         axs[0, i].imshow(np.asarray(img))
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+
+
+def visualize_attribution(dataset, attribution, meta, figfile=None, show=True):
+
+    if torch.is_tensor(attribution):
+        attr_vis = np.transpose(
+            attribution.squeeze().cpu().detach().numpy(), (1, 2, 0)
+        )
+    else:
+        attr_vis = attribution.squeeze()
+
+    img_id, box_id, box_attr = meta["img_id"], meta["box_id"], meta["box_attr"]
+    box_num, box, score, class_label = meta["box_num"], meta["box"], meta["score"], meta["label"]
+
+    img_orig = dataset[img_id][0]
+
+    img_orig_vis = tensorimg_to_npimg(img_orig)  # uint8
+
+    idx_to_class = compute_idx_to_class(dataset.coco)
+
+
+
+    img_det_vis = draw_img_boxes(
+        img_orig_vis,
+        idx_to_class,
+        pred={
+            "boxes": [box],
+            "scores": [score],
+            "labels": [class_label],
+            "box_nums": [box_num],
+        },
+    )
+
+    fig, ax = captumvis.visualize_image_attr_multiple(
+        attr_vis,
+        img_det_vis,
+        ["original_image", "blended_heat_map"],
+        ["all", "all"],
+        show_colorbar=True,
+        alpha_overlay=0.5,
+        fig_size=(8, 8),
+        titles=[
+            f"[{box_id}]({box_num}){idx_to_class[class_label]}: {score}",
+            f"KSHAP(box_attr={box_attr})",
+        ],
+        outlier_perc=1,
+        use_pyplot=False,
+    )
+    
+    if figfile is not None:
+    # figname = f"kshap_{img_id}_{box_id}_{box_attr}.png"
+        visdir = os.path.dirname(figfile)
+        os.makedirs(visdir, exist_ok=True)
+        fig.savefig(figfile, dpi=300)
+
+    if show:
+        show_figure(fig)
+
+
+def show_figure(fig):
+
+    # create a dummy figure and use its
+    # manager to display "fig"  
+    dummy = plt.figure()
+    new_manager = dummy.canvas.manager
+    new_manager.canvas.figure = fig
+    fig.set_canvas(new_manager.canvas)
+    plt.show()
