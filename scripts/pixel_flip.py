@@ -77,11 +77,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Pixel Flipping")
     parser.add_argument(
-        "attribution-file",
-        nargs="?",
+        "attribution_file",
         type=str,
         help="Path to hdf5 attribution file",
-        dest="attribution_file",
     )
     parser.add_argument(
         "--ratio-points",
@@ -124,6 +122,9 @@ if __name__ == "__main__":
 
 
     args = parser.parse_args()
+
+    print(args)
+
     assert os.path.isfile(args.attribution_file), f"Cannot find file: {args.attribution_file}"
     filepath = os.path.abspath(args.attribution_file)
     
