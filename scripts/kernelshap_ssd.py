@@ -165,7 +165,9 @@ class KernelShapExplainer:
                     )
                     figname = f"kshap_{img_id}_{box_id}_{box_attr}.png"
                     os.makedirs(visdir, exist_ok=True)
-                    fig.savefig(os.path.join(visdir, figname), dpi=300)
+                    figpath = os.path.join(visdir, figname)
+                    print(f"Saving image to: {figpath}")
+                    fig.savefig(figpath, dpi=300)
 
 
 if __name__ == "__main__":
@@ -250,9 +252,9 @@ if __name__ == "__main__":
     img_id_list = np.arange(0, min(args.first_images, len(val_set))).tolist()
 
     if args.show:
-        VISDIR = None
-    else:
         VISDIR = args.show_dir
+    else:
+        VISDIR = None
 
     KSHAP_FILE = args.result_file
 
