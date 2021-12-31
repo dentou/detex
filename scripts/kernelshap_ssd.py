@@ -31,134 +31,141 @@ sns.reset_orig()
 sns.set(rc={"savefig.bbox": "tight", "figure.dpi": 300, "savefig.dpi": 300})
 
 
-@torch.no_grad()
-def kernelshap_single(img, segment_mask, model, box_id, box_attr, seed):
+class KernelShapExplainer:
+    def __init__(self, n_samples=2000, baseline=0.5, perturbations_per_eval=16):
+        self.n_samples = n_samples
+        self.baseline = baseline
+        self.perturbations_per_eval = perturbations_per_eval
 
-    assert len(img.shape) == 3, img.shape  # (C, H, W)
-    assert torch.is_tensor(img)
-    assert img.shape[0] == 3
-    assert img.dtype == torch.float, img.dtype
+    @torch.no_grad()
+    def explain_single(self, img, segment_mask, model, box_id, box_attr, seed):
 
-    assert len(segment_mask.shape) == 3, segment_mask.shape  # (1, H, W)
+        assert len(img.shape) == 3, img.shape  # (C, H, W)
+        assert torch.is_tensor(img)
+        assert img.shape[0] == 3
+        assert img.dtype == torch.float, img.dtype
 
-    f = model.make_blackbox("captum", box_id, box_attr, device)
-    ks = captum.attr.KernelShap(f)
+        assert len(segment_mask.shape) == 3, segment_mask.shape  # (1, H, W)
 
-    set_seed(seed)
-    feature_mask = segment_mask.unsqueeze(0)
+        f = model.make_blackbox("captum", box_id, box_attr, device)
+        ks = captum.attr.KernelShap(f)
 
-    input_img = img.unsqueeze(0)
+        set_seed(seed)
+        feature_mask = segment_mask.unsqueeze(0)
 
-    attributions = ks.attribute(
-        input_img,
-        feature_mask=feature_mask,
-        baselines=0.5,
-        n_samples=2000,
-        perturbations_per_eval=16,
-        show_progress=True,
-    ).cpu()
+        input_img = img.unsqueeze(0)
 
-    return attributions
+        attributions = ks.attribute(
+            input_img,
+            feature_mask=feature_mask,
+            baselines=self.baseline,
+            n_samples=self.n_samples,
+            perturbations_per_eval=self.perturbations_per_eval,
+            show_progress=True,
+        ).cpu()
 
+        return attributions
 
-def kernelshap_coco(dataset, model, img_id_list, filepath=None, visdir=None):
-    for img_id in tqdm(img_id_list, desc="Picking img with id: "):
+    def explain_coco(self, dataset, model, img_id_list, filepath=None, visdir=None):
+        for img_id in tqdm(img_id_list, desc="Picking img with id: "):
 
-        img_orig = dataset[img_id][0]  # (C, H, W)
+            img_orig = dataset[img_id][0]  # (C, H, W)
 
-        img = img_orig.clone()
+            img = img_orig.clone()
 
-        spixel_mask = segment(img)  # (H, W)
-        segment_mask = TF.to_tensor(spixel_mask)  # (1, H, W)
+            spixel_mask = segment(img)  # (H, W)
+            segment_mask = TF.to_tensor(spixel_mask)  # (1, H, W)
 
-        with torch.no_grad():
-            orig_dets = model(img.unsqueeze(0).to(device))
-            dets = collect_detections(orig_dets)
-            del orig_dets
-            torch.cuda.empty_cache()
+            with torch.no_grad():
+                orig_dets = model(img.unsqueeze(0).to(device))
+                dets = collect_detections(orig_dets)
+                del orig_dets
+                torch.cuda.empty_cache()
 
-        if not dets:
-            warnings.warn(f"Empty detection for image {img_id}. Explanation skipped.")
-            continue
+            if not dets:
+                warnings.warn(
+                    f"Empty detection for image {img_id}. Explanation skipped."
+                )
+                continue
 
-        total_box_nums = len(dets[0]["box_ids"])
-        for box_num in tqdm(range(total_box_nums), desc="Explaning box_num: "):
-            box_id = dets[0]["box_ids"][box_num]  # only have 1 image
-            class_label = dets[0]["labels"][box_num]
-            box = dets[0]["boxes"][box_num]
-            score = dets[0]["scores"][box_num]
-            box_attr = 4 + class_label
+            total_box_nums = len(dets[0]["box_ids"])
+            for box_num in tqdm(range(total_box_nums), desc="Explaning box_num: "):
+                box_id = dets[0]["box_ids"][box_num]  # only have 1 image
+                class_label = dets[0]["labels"][box_num]
+                box = dets[0]["boxes"][box_num]
+                score = dets[0]["scores"][box_num]
+                box_attr = 4 + class_label
 
-            attribution = kernelshap_single(
-                img,
-                segment_mask=segment_mask,
-                model=model,
-                box_id=box_id,
-                box_attr=box_attr,
-                seed=42,
-            )  # (1, C, H, W)
+                attribution = self.explain_single(
+                    img,
+                    segment_mask=segment_mask,
+                    model=model,
+                    box_id=box_id,
+                    box_attr=box_attr,
+                    seed=42,
+                )  # (1, C, H, W)
 
-            if filepath is not None:
+                if filepath is not None:
 
-                attribution_save = np.transpose(
-                    attribution.squeeze().cpu().detach().numpy(), (1, 2, 0)
-                )[
-                    None
-                ]  # (1, H, W, C)
-
-                meta = {
-                    "img_id": img_id,
-                    "box_id": box_id,
-                    "box_attr": box_attr,
-                    "box_num": box_num,
-                    "box": box,
-                    "label": class_label,
-                    "score": score,
-                }
-                save_attribution(attribution_save, filepath, meta)
-
-            if visdir is not None:
-
-                if torch.is_tensor(attribution):
-                    attr_vis = np.transpose(
+                    attribution_save = np.transpose(
                         attribution.squeeze().cpu().detach().numpy(), (1, 2, 0)
+                    )[
+                        None
+                    ]  # (1, H, W, C)
+
+                    meta = {
+                        "img_id": img_id,
+                        "box_id": box_id,
+                        "box_attr": box_attr,
+                        "box_num": box_num,
+                        "box": box,
+                        "label": class_label,
+                        "score": score,
+                    }
+                    save_attribution(attribution_save, filepath, meta)
+
+                if visdir is not None:
+
+                    if torch.is_tensor(attribution):
+                        attr_vis = np.transpose(
+                            attribution.squeeze().cpu().detach().numpy(), (1, 2, 0)
+                        )
+                    else:
+                        attr_vis = attribution.squeeze()
+
+                    img_orig_vis = tensorimg_to_npimg(img_orig)  # uint8
+
+                    idx_to_class = compute_idx_to_class(dataset.coco)
+
+                    img_det_vis = draw_img_boxes(
+                        img_orig_vis,
+                        idx_to_class,
+                        pred={
+                            "boxes": [box],
+                            "scores": [score],
+                            "labels": [class_label],
+                            "box_nums": [box_num],
+                        },
                     )
-                else:
-                    attr_vis = attribution.squeeze()
 
-                img_orig_vis = tensorimg_to_npimg(img_orig)  # uint8
-
-                idx_to_class = compute_idx_to_class(dataset.coco)
-
-                img_det_vis = draw_img_boxes(
-                    img_orig_vis,
-                    idx_to_class,
-                    pred={
-                        "boxes": [box],
-                        "scores": [score],
-                        "labels": [class_label],
-                        "box_nums": [box_num],
-                    },
-                )
-
-                fig, ax = captumvis.visualize_image_attr_multiple(
-                    attr_vis,
-                    img_det_vis,
-                    ["original_image", "blended_heat_map"],
-                    ["all", "all"],
-                    show_colorbar=True,
-                    alpha_overlay=0.5,
-                    fig_size=(8, 8),
-                    titles=[
-                        f"[{box_id}]({box_num}){idx_to_class[class_label]}: {score}",
-                        f"KSHAP(box_attr={box_attr})",
-                    ],
-                    outlier_perc=1,
-                    use_pyplot=False,
-                )
-                figname = f"kshap_{img_id}_{box_id}_{box_attr}.png"
-                os.makedirs(visdir, exist_ok=True)
-                fig.savefig(os.path.join(visdir, figname), dpi=300)
+                    fig, ax = captumvis.visualize_image_attr_multiple(
+                        attr_vis,
+                        img_det_vis,
+                        ["original_image", "blended_heat_map"],
+                        ["all", "all"],
+                        show_colorbar=True,
+                        alpha_overlay=0.5,
+                        fig_size=(8, 8),
+                        titles=[
+                            f"[{box_id}]({box_num}){idx_to_class[class_label]}: {score}",
+                            f"KSHAP(box_attr={box_attr})",
+                        ],
+                        outlier_perc=1,
+                        use_pyplot=False,
+                    )
+                    figname = f"kshap_{img_id}_{box_id}_{box_attr}.png"
+                    os.makedirs(visdir, exist_ok=True)
+                    fig.savefig(os.path.join(visdir, figname), dpi=300)
 
 
 if __name__ == "__main__":
@@ -171,7 +178,14 @@ if __name__ == "__main__":
         default=1,
         help="Run kshap on first x images in the dataset",
     )
-    parser.add_argument("--batch-size", nargs="?", default=16, type=int)
+    parser.add_argument(
+        "--batch-size",
+        nargs="?",
+        default=16,
+        type=int,
+        help="Batch size for model pass",
+    )
+
     parser.add_argument(
         "--shap-samples",
         nargs="?",
@@ -209,8 +223,6 @@ if __name__ == "__main__":
         help="Visualize and save in dir specified by --show-dir",
     )
 
-    
-
     args = parser.parse_args()
 
     ROOT_DIR = os.path.abspath(".")
@@ -244,7 +256,13 @@ if __name__ == "__main__":
 
     KSHAP_FILE = args.result_file
 
-    kernelshap_coco(
+    kernelshap = KernelShapExplainer(
+        n_samples=args.shap_samples,
+        baseline=args.baseline_value,
+        perturbations_per_eval=args.batch_size,
+    )
+
+    kernelshap.explain_coco(
         val_set,
         model,
         img_id_list,
