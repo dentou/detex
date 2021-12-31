@@ -20,7 +20,7 @@ chmod +x scripts/download_cocoval.sh
 
 ## Running
 ### Kernel SHAP
-**Example command**: Run Kernel SHAP for the first 100 COCO images and store results
+**Example command**: Run Kernel SHAP for the first 100 COCO images, using 2000 samples for approximating SHAP and assign for each perturbed feature a value of 0.5 (light gray), and store results.
 ```bash
 python scripts/kernelshap_ssd.py \
     --first-images=100 \
