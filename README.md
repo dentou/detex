@@ -34,7 +34,13 @@ Incorrect detection
 
 ![Pixel flipping for Kernel Shap with 2000 iterations in 100 images](./docs/images/kshap/pixel_flipping_kshap_2000s_100i.png)
 
-#### Localization metrics:
+#### Localization metrics
  - Positive attribution inside box (against all positive attribution): 23.6%
  - Box coverage:  64.8%
  - IoU: 20%
+
+#### Runtime
+ - On Google Colab's Tesla P100
+ - Batch size = 128
+ - 100 images (254 boxes): 2 hours 6 minutes
+ - Average time per explanation (i.e. box): ~30 seconds
