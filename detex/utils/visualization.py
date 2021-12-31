@@ -6,6 +6,10 @@ from captum.attr import visualization as captumvis
 import os
 from .convert import tensorimg_to_npimg
 
+plt.rcParams['savefig.bbox'] = "tight"
+plt.rcParams['savefig.dpi'] = 300
+
+
 
 def draw_img_boxes(img, idx_to_class, gt=None, pred=None):
     """
