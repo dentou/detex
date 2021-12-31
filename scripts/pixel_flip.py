@@ -2,7 +2,15 @@ from re import S
 from captum import attr
 from torch.utils import data
 import context
-from detex.utils import load_attribution, collect_metas, tensorimg_to_npimg, compute_idx_to_class, draw_img_boxes, collapse_exp
+from detex.utils import (
+    load_attribution,
+    collect_metas,
+    tensorimg_to_npimg,
+    compute_idx_to_class,
+    draw_img_boxes,
+    collapse_exp,
+)
+import argparse
 from detex.models import SSDWrapper
 import h5py
 
@@ -17,10 +25,13 @@ from detex.utils.visualization import show_imgs, visualize_attribution
 import torchvision.transforms.functional as TF
 import torch.utils.data as TUD
 from tqdm.auto import tqdm
+from pathlib import Path
+
 
 class PixelFlipper(torch.utils.data.Dataset):
-
-    def __init__(self, img, attribution, flipped_val, ratios=np.linspace(0,1,11).tolist()) -> None:
+    def __init__(
+        self, img, attribution, flip_val, ratios=np.linspace(0, 1, 11).tolist()
+    ) -> None:
         super().__init__()
         assert isinstance(img, np.ndarray)
         assert isinstance(attribution, np.ndarray)
@@ -29,13 +40,15 @@ class PixelFlipper(torch.utils.data.Dataset):
         self.attribution = collapse_exp(attribution.squeeze())
         self.total_num_pixels = np.prod(attribution.shape)
 
-        self.flipped_val = flipped_val
+        self.flip_val = flip_val
         self.ratios = ratios
 
         self._compute_indices()
 
     def _compute_indices(self):
-        self.top_ids = np.unravel_index(np.argsort(self.attribution, axis=None)[::-1], self.attribution.shape)[:2]
+        self.top_ids = np.unravel_index(
+            np.argsort(self.attribution, axis=None)[::-1], self.attribution.shape
+        )[:2]
 
     def __len__(self):
         return len(self.ratios)
@@ -50,29 +63,74 @@ class PixelFlipper(torch.utils.data.Dataset):
         img = self.img.copy()
 
         ratio = self.ratios[idx]
-        num_pixels = int(ratio*self.total_num_pixels)
+        num_pixels = int(ratio * self.total_num_pixels)
         mask = np.zeros_like(img, dtype=bool)
         flipped_ids = tuple(t[:num_pixels] for t in self.top_ids)
         mask[flipped_ids] = True
 
-
-        img[mask] = self.flipped_val
+        img[mask] = self.flip_val
 
         return img
-        
 
-
-
-    
-
-        
-
-    
-
-    
 
 if __name__ == "__main__":
-    filepath = "data/results/kshap/kshap.hdf5"
+
+    parser = argparse.ArgumentParser(description="Pixel Flipping")
+    parser.add_argument(
+        "attribution-file",
+        nargs="?",
+        type=str,
+        help="Path to hdf5 attribution file",
+    )
+    parser.add_argument(
+        "--ratio-points",
+        nargs="?",
+        type=int,
+        default=51,
+        help="NUmber of points between 0 and 1 (inclusive) used for getting flipping ratios",
+    )
+
+    parser.add_argument(
+        "--flip-val",
+        nargs="?",
+        type=float,
+        default=0.5,
+        help="Value assigned to flipped pixels",
+    )
+
+    parser.add_argument(
+        "--batch-size",
+        nargs="?",
+        default=16,
+        type=int,
+        help="Batch size for data loader",
+    )
+
+    parser.add_argument(
+        "--num-workers",
+        nargs="?",
+        default=2,
+        type=int,
+        help="Number of workers for data loader",
+    )
+
+    parser.add_argument(
+        "--show-legend",
+        action="store_true",
+        help="Show legend in plot",
+    )
+
+
+
+    args = parser.parse_args()
+    assert os.path.isfile(args.attribution_file), f"Cannot find file: {args.attribution_file}"
+    filepath = os.path.abspath(args.attribution_file)
+    
+   
+
+    # filepath = "data/results/kshap/kshap_2000s_100i_colab.hdf5"
+
+    filename = Path(filepath).resolve().stem
 
     ROOT_DIR = os.path.abspath(".")
     DATA_DIR = os.path.join(ROOT_DIR, "data")
@@ -96,11 +154,10 @@ if __name__ == "__main__":
 
     model.to(device)
 
-
     metas = []
     with h5py.File(filepath, "r") as h:
         metas = collect_metas(h)
-    
+
     idx_to_class = compute_idx_to_class(val_set.coco)
 
     allscores = []
@@ -108,24 +165,21 @@ if __name__ == "__main__":
     for meta in tqdm(metas, desc="Picking meta:"):
         attribution, meta = load_attribution(filepath, meta)
 
-
         img_id, box_id, box_attr = meta["img_id"], meta["box_id"], meta["box_attr"]
-
-
 
         img_orig = val_set[img_id][0]
 
-        img = np.transpose(img_orig.detach().cpu().numpy().squeeze(), (1,2,0))
-
-    
+        img = np.transpose(img_orig.detach().cpu().numpy().squeeze(), (1, 2, 0))
 
         forward_func = model.make_blackbox("captum", box_id, box_attr, device)
 
-        ratios = np.linspace(0,1,51).tolist()
+        ratios = np.linspace(0, 1, args.ratio_points).tolist()
 
-        flipper = PixelFlipper(img, attribution, flipped_val=0.1, ratios=ratios)
+        flipper = PixelFlipper(img, attribution, flip_val=args.flip_val, ratios=ratios)
 
-        flipper_loader = TUD.DataLoader(flipper, batch_size=16, shuffle=False, num_workers=2, drop_last=False)
+        flipper_loader = TUD.DataLoader(
+            flipper, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, drop_last=False
+        )
 
         attrscores = []
         with torch.no_grad():
@@ -135,14 +189,13 @@ if __name__ == "__main__":
 
         allscores.append(attrscores)
 
-
     allscores = np.array(allscores)
     print(allscores)
 
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 
     if box_attr >= 4:
-        attrname = idx_to_class[box_attr-4]
+        attrname = idx_to_class[box_attr - 4]
     else:
         attrname = ["x1", "y1", "x2", "y2"][box_attr]
 
@@ -161,19 +214,12 @@ if __name__ == "__main__":
         img_id, box_id, box_attr = meta["img_id"], meta["box_id"], meta["box_attr"]
         ax.plot(ratios, s, label=f"{img_id}/{box_id}/{box_attr}")
 
-    ax.legend()
+    if args.show_legend:
+        ax.legend()
 
-
-    figfile = f"data/results/kshap/pixel_flip/{img_id}_{box_id}_{box_attr}.png"
-    os.makedirs(os.path.dirname(figfile), exist_ok=True)
+    pixel_flip_dir = f"data/results/kshap/pixel_flip_{filename}"
+    figfile = os.path.join(pixel_flip_dir, f"score_plot.png")
+    scorefile = os.path.join(pixel_flip_dir, f"allscore.npy")
+    np.save(scorefile, allscores)
+    os.makedirs(pixel_flip_dir, exist_ok=True)
     fig.savefig(figfile, dpi=300)
-
-
-
-
-
-    
-
-
-
-        
