@@ -24,7 +24,7 @@ chmod +x scripts/download_cocoval.sh
 - Using 256 superpixels per image as features
 
 
-### Examples:
+#### Examples:
 Correct detection
 ![Correct detection](./docs/images/kshap/kshap_2000s_100i_0_7089_66.png)
 Incorrect detection
