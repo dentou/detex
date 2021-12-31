@@ -1,5 +1,4 @@
 import warnings
-from captum import attr
 import context
 import os
 import torchvision
@@ -11,7 +10,7 @@ from captum.attr import visualization as captumvis
 
 from detex.models import SSDWrapper
 import numpy as np
-from skimage import segmentation as skseg
+import argparse
 
 from detex.utils import (
     draw_img_boxes,
@@ -54,7 +53,7 @@ def kernelshap_single(img, segment_mask, model, box_id, box_attr, seed):
         input_img,
         feature_mask=feature_mask,
         baselines=0.5,
-        n_samples=1000,
+        n_samples=2000,
         perturbations_per_eval=16,
         show_progress=True,
     ).cpu()
@@ -100,9 +99,12 @@ def kernelshap_coco(dataset, model, img_id_list, filepath=None, visdir=None):
             )  # (1, C, H, W)
 
             if filepath is not None:
+
                 attribution_save = np.transpose(
                     attribution.squeeze().cpu().detach().numpy(), (1, 2, 0)
-                )[None]  # (1, H, W, C)
+                )[
+                    None
+                ]  # (1, H, W, C)
 
                 meta = {
                     "img_id": img_id,
@@ -160,6 +162,57 @@ def kernelshap_coco(dataset, model, img_id_list, filepath=None, visdir=None):
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="KernelSHAP")
+    parser.add_argument(
+        "--first-images",
+        nargs="?",
+        type=int,
+        default=1,
+        help="Run kshap on first x images in the dataset",
+    )
+    parser.add_argument("--batch-size", nargs="?", default=16, type=int)
+    parser.add_argument(
+        "--shap-samples",
+        nargs="?",
+        default=2000,
+        type=int,
+        help="Number of samples for approximating Shapley values",
+    )
+    parser.add_argument(
+        "--baseline-value",
+        nargs="?",
+        default=0.5,
+        type=float,
+        help="Value assigned to perturbed pixels (in the range [0, 1])",
+    )
+
+    parser.add_argument(
+        "--result-file",
+        nargs="?",
+        default="data/results/kshap/kshap.hdf5",
+        type=str,
+        help="Directory to store result file",
+    )
+
+    parser.add_argument(
+        "--show-dir",
+        nargs="?",
+        default="data/results/kshap/vis",
+        type=str,
+        help="Directory to store visualization",
+    )
+
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Visualize and save in dir specified by --show-dir",
+    )
+
+    
+
+    args = parser.parse_args()
+
     ROOT_DIR = os.path.abspath(".")
     DATA_DIR = os.path.join(ROOT_DIR, "data")
 
@@ -182,17 +235,19 @@ if __name__ == "__main__":
 
     model.to(device)
 
-    # img_id_list = [
-    #     0,
-    # ]
+    img_id_list = np.arange(0, min(args.first_images, len(val_set))).tolist()
 
-    img_id_list = np.arange(0, 50).tolist()
+    if args.show:
+        VISDIR = None
+    else:
+        VISDIR = args.show_dir
+
+    KSHAP_FILE = args.result_file
 
     kernelshap_coco(
         val_set,
         model,
         img_id_list,
-        visdir="data/results/kshap/vis",
-        filepath="data/results/kshap/kshap.hdf5",
+        visdir=VISDIR,
+        filepath=KSHAP_FILE,
     )
-

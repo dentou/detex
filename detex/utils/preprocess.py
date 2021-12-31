@@ -12,6 +12,8 @@ def segment(img):
         compactness=10,
         convert2lab=True,
         slic_zero=True,
-        multichannel=True,
+        # multichannel=True, # deprecated
+        start_label=0,
+        channel_axis=-1,
     )  # a higher value of compactness leads to squared regions, a higher value of sigma leads to rounded delimitations
     return spixel_labels  # , skseg.mark_boundaries(img, spixel_labels)
