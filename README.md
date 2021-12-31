@@ -37,7 +37,7 @@ Incorrect detection
 #### Localization metrics
  - Positive attribution inside box (against all positive attribution): 23.6%
  - Box coverage:  64.8%
- - IoU: 20%
+ - IoU: 20.9%
 
 #### Runtime
  - On Google Colab's Tesla P100
