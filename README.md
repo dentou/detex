@@ -18,6 +18,18 @@ chmod +x scripts/download_cocoval.sh
 ./scripts/download_cocoval.sh
 ```
 
+## Running
+### Kernel SHAP
+**Example command**: Run Kernel SHAP for the first 100 COCO images and store results
+```bash
+python scripts/kernelshap_ssd.py \
+    --first-images=100 \
+    --batch-size=16 \
+    --shap-samples=2000 \
+    --baseline-value=0.5 \
+    --result-file="data/results/kshap/kshap_2000s_100i.hdf5"
+```
+
 ## Results
 ### Kernel SHAP
 - Using 2000 samples per box in 100 images (254 boxes in total)
