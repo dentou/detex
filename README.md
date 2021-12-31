@@ -31,7 +31,7 @@ Incorrect detection
 ![Incorrect detection](./docs/images/kshap/kshap_2000s_100i_0_7189_66.png)
 
 #### Pixel flipping
-
+ - Area Under the Curve (trapezoidal rule): ~ 7.023 (unnormalized), or 0.0236 (normalized against 254 boxes) 
 ![Pixel flipping for Kernel Shap with 2000 iterations in 100 images](./docs/images/kshap/pixel_flipping_kshap_2000s_100i.png)
 
 #### Localization metrics
