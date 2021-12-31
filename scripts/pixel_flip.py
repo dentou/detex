@@ -81,6 +81,7 @@ if __name__ == "__main__":
         nargs="?",
         type=str,
         help="Path to hdf5 attribution file",
+        dest="attribution_file",
     )
     parser.add_argument(
         "--ratio-points",
