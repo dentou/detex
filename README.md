@@ -32,8 +32,12 @@ python scripts/kernelshap_ssd.py \
 
 ## Results
 ### Kernel SHAP
-- Using 2000 samples per box in 100 images (254 boxes in total)
-- Using 256 superpixels per image as features
+- Kernel SHAP trains a linear explanation model to locally approximate the true model (using LIME framework)
+- Exact runtime grows exponentially with the number of features, i.e. pixels.
+- To constraint the runtime, we
+  -  segment image into 256 SLIC superpixels, each corresponding to one feature
+  -  train a surrogate model on 2000 samples (perturbations) per explanation (detected box)
+- Evaluated on the first 100 images of COCO 2017 using SSD detector
 
 
 #### Examples:
