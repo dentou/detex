@@ -105,7 +105,7 @@ class KernelShapExplainer:
                     seed=42,
                 )  # (1, C, H, W)
 
-                if filepath is not None:
+                if filepath:
 
                     attribution_save = np.transpose(
                         attribution.squeeze().cpu().detach().numpy(), (1, 2, 0)
@@ -124,7 +124,7 @@ class KernelShapExplainer:
                     }
                     save_attribution(attribution_save, filepath, meta)
 
-                if visdir is not None:
+                if visdir:
 
                     if torch.is_tensor(attribution):
                         attr_vis = np.transpose(
@@ -175,14 +175,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="KernelSHAP")
     parser.add_argument(
         "--first-images",
-        nargs="?",
         type=int,
         default=1,
         help="Run kshap on first x images in the dataset",
     )
     parser.add_argument(
         "--batch-size",
-        nargs="?",
         default=16,
         type=int,
         help="Batch size for model pass",
@@ -190,14 +188,12 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--shap-samples",
-        nargs="?",
         default=2000,
         type=int,
         help="Number of samples for approximating Shapley values",
     )
     parser.add_argument(
         "--baseline-value",
-        nargs="?",
         default=0.5,
         type=float,
         help="Value assigned to perturbed pixels (in the range [0, 1])",
@@ -205,16 +201,14 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--result-file",
-        nargs="?",
-        default="data/results/kshap/kshap.hdf5",
+        default=None,
         type=str,
-        help="Directory to store result file",
+        help="HDF5 file to save attributions",
     )
 
     parser.add_argument(
         "--show-dir",
-        nargs="?",
-        default="data/results/kshap/vis",
+        default=None,
         type=str,
         help="Directory to store visualization",
     )
