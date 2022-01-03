@@ -122,8 +122,10 @@ class XGradCAM(GradCAM):
         via global average pooling
         Returns:
         -------
-            cam: The placeholder for resulting weighted feature maps
-            weights: The weights corresponding to the extracting feature maps
+            cam_cls: The placeholder for resulting weighted feature maps explaining classes
+            cam_box: The placeholder for resulting weighted feature maps explaining boxes
+            weights_cls: The weights corresponding to the extracting feature maps explaining classes
+            weights_box: The weights corresponding to the extracting feature maps explaining boxes
         """
         self.target_cls = self.target_cls.reshape(*self.grads_val_cls.numpy()[0, :].shape)
         self.target_box = self.target_box.reshape(*self.grads_val_box.numpy()[0, :].shape)
@@ -232,8 +234,10 @@ class GradCAMPlusPlus(GradCAM):
         via global average pooling
         Returns:
         -------
-            cam: The placeholder for resulting weighted feature maps
-            weights: The weights corresponding to the extracting feature maps
+            cam_cls: The placeholder for resulting weighted feature maps explaining classes
+            cam_box: The placeholder for resulting weighted feature maps explaining boxes
+            weights_cls: The weights corresponding to the extracting feature maps explaining classes
+            weights_box: The weights corresponding to the extracting feature maps explaining boxes
         """
         self.alphas_cls = self.alphas_cls.reshape(*self.grads_val_cls.numpy()[0, :].shape)
         self.alphas_box = self.alphas_box.reshape(*self.grads_val_box.numpy()[0, :].shape)
@@ -253,10 +257,15 @@ class GradCAMPlusPlus(GradCAM):
         -------
             input_features: A multivariate data input to the model
             print_out: Whether to print the class with maximum likelihood when index is None
+            bbox: Targeted bounding box
             index: Targeted output class
         Returns:
         -------
-            cam: The resulting weighted feature maps
+            cam_cls: The resulting weighted feature maps explaining classes
+            cam_box: The resulting weighted feature maps explaining boxes
+            output: The detection results
+            index: The targeted class label
+            overall_box_id: The id of the bounding box among the box list
         """
         if index is not None and print_out == True:
             print_out = False
