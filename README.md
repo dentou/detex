@@ -30,6 +30,9 @@ python scripts/kernelshap_ssd.py \
     --result-file="data/results/kshap/kshap_2000s_100i.hdf5"
 ```
 
+### XGrad-CAM/Grad-CAM++
+**Example command**:
+
 ## Results
 ### Kernel SHAP
 - Kernel SHAP trains a linear explanation model to locally approximate the true model (using LIME framework)
@@ -60,3 +63,10 @@ Incorrect detection
  - Batch size = 128
  - 100 images (254 boxes): 2 hours 6 minutes
  - Average time per explanation (i.e. box): ~30 seconds
+
+
+### XGrad-CAM/Grad-CAM++
+- Implement two Class Activation Mapping (CAM) methods: XGrad-CAM and Grad-CAM++
+- These two methods are the generalized version of Grad-CAM
+- Grad-CAM is a model-specific local XAI method that extracts interested CAM visualization by weighting the feature map at one particular convolutional layer with its gradient caused by backpropagating a target prediction
+- Runtime grows exponentially with the model complexity and linearly with the number of pixels
