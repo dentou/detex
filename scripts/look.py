@@ -9,6 +9,8 @@ from detex.utils import (
 )
 import h5py
 
+import argparse
+
 import torch
 import numpy as np
 import torchvision
@@ -19,10 +21,16 @@ from detex.utils.visualization import visualize_attribution
 
 
 if __name__ == "__main__":
-    # filepath = "data/results/kshap/kshap.hdf5"
-    filepath = "data/results/kshap/kshap_2000s_100i_colab.hdf5"
+    parser = argparse.ArgumentParser(description="Attribution filepath")
+    parser.add_argument(
+        "--filepath",
+        default=None,
+        type=str,
+        help="hdf5 attribution file path",
+    )
+    args = parser.parse_args()
 
-    # filepath = "data/cluster_sync/pulled/data/results/kshap/kshap.hdf5"
+    filepath = args.filepath
 
     ROOT_DIR = os.path.abspath(".")
     DATA_DIR = os.path.join(ROOT_DIR, "data")
@@ -53,5 +61,5 @@ if __name__ == "__main__":
             attribution,
             meta,
             show=False,
-            figfile=f"data/docs/images/kshap_2000s_100i_{img_id}_{box_id}_{box_attr}.png",
+            figfile=f"docs/images/{meta['explainer_engine'].lower()}/{filepath.split('/')[-1].split('.')[0]}_{img_id}_{box_id}_{box_attr}.png",
         )
