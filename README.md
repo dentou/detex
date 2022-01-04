@@ -99,7 +99,14 @@ Incorrect detection
 #### Pixel flipping
 
 #### Localization metrics
-
+XGrad-CAM:
+ - Positive attribution inside box (against all positive attribution): 18.65%
+ - Box coverage:  64.74%
+ - IoU: 16.93%
+Grad-CAM++:
+ - Positive attribution inside box (against all positive attribution): 14.59%
+ - Box coverage:  72.96%
+ - IoU: 13.84%
 #### Runtime
  - On Intel(R) Core(TM) i5-7360U CPU @ 2.30GHz
  - 100 images (254 boxes): 38 minutes

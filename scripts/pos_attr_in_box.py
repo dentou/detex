@@ -38,6 +38,12 @@ if __name__ == "__main__":
         type=str,
         help="Path to hdf5 attribution file",
     )
+    parser.add_argument(
+        "--baseline-value",
+        default=0.5,
+        type=float,
+        help="Value assigned to perturbed pixels (in the range [0, 1])",
+    )
 
     args = parser.parse_args()
 
@@ -45,6 +51,7 @@ if __name__ == "__main__":
 
     assert os.path.isfile(args.attribution_file), f"Cannot find file: {args.attribution_file}"
     filepath = os.path.abspath(args.attribution_file)
+    baseline_value = args.baseline_value
     
    
     filename = Path(filepath).resolve().stem
@@ -67,11 +74,16 @@ if __name__ == "__main__":
         img_id, box_id, box_attr = meta["img_id"], meta["box_id"], meta["box_attr"]
 
         box = meta["box"]
+        engine = meta["explainer_engine"]
         x1, y1, x2, y2 = box
         x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
         attribution = collapse_exp(attribution.squeeze()) # (H, W, C)
-        num_pos = float(np.sum(attribution > 0))
-        num_pos_in_box = float(np.sum(attribution[y1:y2, x1:x2] > 0))
+        if engine.lower() == "kshap":
+            num_pos = float(np.sum(attribution > 0))
+            num_pos_in_box = float(np.sum(attribution[y1:y2, x1:x2] > baseline_value))
+        elif engine.lower() == "xgrad-cam" or engine.lower() == "grad-cam++":
+            num_pos = float(np.sum((attribution / 255.0) > baseline_value))
+            num_pos_in_box = float(np.sum((attribution[x1:x2, y1:y2]/ 255.0) > baseline_value))
 
         box_area = float((x2-x1)*(y2-y1))
 
@@ -81,7 +93,7 @@ if __name__ == "__main__":
 
     
 
-    result_dir = f"data/results/kshap/pos_attr_in_box_{filename}"
+    result_dir = f"data/results/{engine.lower()}/pos_attr_in_box_{filename}"
     os.makedirs(result_dir, exist_ok=True)
 
     total_num_pos = sum(results["num_pos"])
