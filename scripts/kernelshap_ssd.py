@@ -114,6 +114,7 @@ class KernelShapExplainer:
                     ]  # (1, H, W, C)
 
                     meta = {
+                        "explainer_engine": 'kSHAP',
                         "img_id": img_id,
                         "box_id": box_id,
                         "box_attr": box_attr,
