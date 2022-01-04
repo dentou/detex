@@ -3,8 +3,8 @@ from torch.nn import functional as F
 from torchvision.models.detection import _utils as det_utils
 from torchvision.ops import boxes as box_ops
 import numpy as np
-from unitcam import UnitCAM
-from ssd_extractor import SSD300VGG16FeatureExtractor
+from .unitcam import UnitCAM
+from .ssd_extractor import SSD300VGG16FeatureExtractor
 
 
 class GradCAM(UnitCAM):
@@ -25,8 +25,8 @@ class GradCAM(UnitCAM):
         use_cuda: Whether to use cuda
     """
 
-    def __init__(self, model, num_classes, use_cuda):
-        super().__init__(model, num_classes, use_cuda)
+    def __init__(self, model, baseline, num_classes, use_cuda):
+        super().__init__(model, baseline, num_classes, use_cuda)
         self.grads_val = None
         self.target = None
 
@@ -40,31 +40,13 @@ class GradCAM(UnitCAM):
             bbox: Targeted bounding box
             index: Targeted output class
         """
-        transformed_input, features, output, raw_boxes_per_scale, index, anchors = self._extract_features(
+        features, output, raw_boxes_per_scale, index, loc, overall_box_id = self._extract_features(
             input_features, print_out, bbox, index
         )
         self.model.zero_grad()
 
         bboxes_per_scale = raw_boxes_per_scale['bbox_regression']
         labels_per_scale = raw_boxes_per_scale['cls_logits']
-        box_coder = det_utils.BoxCoder(weights=(10.0, 10.0, 5.0, 5.0))
-
-        count = [0]
-        original_image_sizes = []
-        for img in input_features:
-            val = img.shape[-2:]
-            assert len(val) == 2
-            original_image_sizes.append((val[0], val[1]))
-        for scale_idx in range(6):
-            for box_cluster in range(len(bboxes_per_scale[scale_idx])):
-                count.append(count[scale_idx] + bboxes_per_scale[scale_idx][box_cluster].size()[0])
-                boxes = box_coder.decode_single(bboxes_per_scale[scale_idx][box_cluster], anchors[0][count[scale_idx]:count[scale_idx+1]])
-                boxes = box_ops.clip_boxes_to_image(boxes, transformed_input.image_sizes[0])
-                boxes = SSD300VGG16FeatureExtractor._resize_boxes(boxes, transformed_input.image_sizes[0], original_image_sizes[0])
-                for box_id, box in enumerate(boxes):
-                    if torch.allclose(box, bbox):
-                        loc = (scale_idx, box_id)
-                        overall_box_id = count[scale_idx] + box_id
 
         try:
             self.one_hot_cls = torch.zeros_like(labels_per_scale[loc[0]], dtype=torch.float32)
@@ -97,6 +79,35 @@ class GradCAM(UnitCAM):
 
         return output, index, overall_box_id
 
+    def __call__(self, input_features, print_out, bbox, index=None):
+        """Implemented method when CAM is called on a given input and its targeted
+        index
+        Attributes:
+        -------
+            input_features: A multivariate data input to the model
+            print_out: Whether to print the class with maximum likelihood when index is None
+            index: Targeted output class
+        Returns:
+        -------
+            cam: The resulting weighted feature maps
+        """
+        if index is not None and print_out == True:
+            print_out = False
+
+        output, index, overall_box_id = self._calculate_gradients(input_features, print_out, bbox, index)
+
+        cam_cls, cam_box, weights_cls, weights_box = self._map_gradients()
+        assert (
+            weights_cls.shape[0] == self.target_cls.shape[0]
+        ), "Weights and targets layer shapes are not compatible."
+        assert (
+            weights_box.shape[0] == self.target_box.shape[0]
+        ), "Weights and targets layer shapes are not compatible."
+        cam_cls = self._cam_weighted_sum(cam_cls, weights_cls, self.target_cls)
+        cam_box = self._cam_weighted_sum(cam_box, weights_box, self.target_box)
+
+        return cam_cls, cam_box, output, index, overall_box_id
+
 class XGradCAM(GradCAM):
     """The implementation of XGrad-CAM for object detection
     CNN-based deep learning models
@@ -114,8 +125,8 @@ class XGradCAM(GradCAM):
         use_cuda: Whether to use cuda
     """
 
-    def __init__(self, model, use_cuda):
-        super().__init__(model, use_cuda)
+    def __init__(self, model, baseline, num_classes, use_cuda):
+        super().__init__(model, baseline, num_classes, use_cuda)
 
     def _map_gradients(self):
         """Caculate weights based on the gradients corresponding to the extracting layer
@@ -157,8 +168,8 @@ class GradCAMPlusPlus(GradCAM):
         use_cuda: Whether to use cuda
     """
 
-    def __init__(self, model, use_cuda):
-        super().__init__(model, use_cuda)
+    def __init__(self, model, baseline, num_classes, use_cuda):
+        super().__init__(model, baseline, num_classes, use_cuda)
         self.alphas = None
         self.one_hot = None
 

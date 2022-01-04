@@ -11,15 +11,15 @@ class SSD300VGG16FeatureExtractor:
     """Class for extracting activations and
     registering gradients from targetted intermediate layers"""
 
-    def __init__(self, model, num_classes, bbox):
+    def __init__(self, model, baseline, num_classes, bbox):
         self.model = model
         self.bbox = bbox
         self.transform = self.model._modules['transform']
         self.gradients = []
         self.num_columns = num_classes
         self.box_coder = det_utils.BoxCoder(weights=(10.0, 10.0, 5.0, 5.0))
-        self.score_thresh = 0.5
-        self.nms_thresh = 0.4
+        self.score_thresh = baseline
+        self.nms_thresh = 0.45
         self.topk_candidates = 400
         self.detections_per_img = 200
     
@@ -90,16 +90,16 @@ class SSD300VGG16FeatureExtractor:
             })
         return detections
 
-    def find_target_layer(self, x):
+    def find_target_layer(self, input_imgs):
         original_image_sizes = []
-        for img in x:
+        for img in input_imgs:
             val = img.shape[-2:]
             assert len(val) == 2
             original_image_sizes.append((val[0], val[1]))
-        x, _ = self.transform(x)
+        input_imgs, _ = self.transform(input_imgs.unsqueeze(0))
         for name, module in self.model._modules.items():
             if name == 'backbone':
-                features = module(x.tensors)
+                features = module(input_imgs.tensors)
                 if isinstance(features, torch.Tensor):
                     features = OrderedDict([('0', features)])
                 features = list(features.values())
@@ -124,17 +124,19 @@ class SSD300VGG16FeatureExtractor:
 
                             head_outputs['bbox_regression'].append(y)
             elif name == 'anchor_generator':
-                anchors = module(x, features)
+                anchors = module(input_imgs, features)
 
         count = [0]
         for scale_idx in range(6):
-            for box_id in range(len(head_outputs['bbox_regression'][scale_idx])):
-                count.append(count[scale_idx] + head_outputs['bbox_regression'][scale_idx][box_id].size()[0])
-                boxes = self.box_coder.decode_single(head_outputs['bbox_regression'][scale_idx][box_id], anchors[0][count[scale_idx]:count[scale_idx+1]])
-                boxes = box_ops.clip_boxes_to_image(boxes, x.image_sizes[0])
-                boxes = self._resize_boxes(boxes, x.image_sizes[0],original_image_sizes[0])
-                for box in boxes:
-                    if torch.allclose(box.detach(), self.bbox):
+            for box_cluster in range(len(head_outputs['bbox_regression'][scale_idx])):
+                count.append(count[scale_idx] + head_outputs['bbox_regression'][scale_idx][box_cluster].size()[0])
+                boxes = self.box_coder.decode_single(head_outputs['bbox_regression'][scale_idx][box_cluster], anchors[0][count[scale_idx]:count[scale_idx+1]])
+                boxes = box_ops.clip_boxes_to_image(boxes, input_imgs.image_sizes[0])
+                boxes = SSD300VGG16FeatureExtractor._resize_boxes(boxes, input_imgs.image_sizes[0], original_image_sizes[0])
+                for box_id, box in enumerate(boxes):
+                    if torch.allclose(box, self.bbox):
+                        self.loc = (scale_idx, box_id)
+                        self.overall_box_id = count[scale_idx] + box_id
                         self.target_layer = scale_idx
 
     def __call__(self, input_imgs, zero_out=None):
@@ -145,7 +147,7 @@ class SSD300VGG16FeatureExtractor:
             val = img.shape[-2:]
             assert len(val) == 2
             original_image_sizes.append((val[0], val[1]))
-        input_imgs, _ = self.transform(input_imgs)
+        input_imgs, _ = self.transform(input_imgs.unsqueeze(0))
         for name, module in self.model._modules.items():
             if name == 'backbone':
                 features = OrderedDict()
@@ -167,37 +169,33 @@ class SSD300VGG16FeatureExtractor:
                             y = module1(input_imgs.tensors)
                             features['0'] = y
                     else:
-                        if self.target_layer > 0:
-                            for name2, module2 in module1._modules.items():
-                                if name2 == str(self.target_layer - 1):
-                                    if name2 == '0':
-                                        for name3, module3 in module2._modules.items():
-                                            if name3 == '7':
-                                                for name4, module4 in module3._modules.items():
-                                                    if name4 == '4':
-                                                        y = module4(y)
-                                                        y.register_hook(self._save_gradient)
-                                                        outputs += [y]
-                                                        features[str(self.target_layer)] = y
-                                                    else:
-                                                        y = module4(y)
-                                            else:
-                                                y = module3(y)
-                                    else:
-                                        for name3, module3 in module2._modules.items():
-                                            if name3 == '3':
-                                                y = module3(y)
-                                                y.register_hook(self._save_gradient)
-                                                outputs += [y]
-                                                features[str(self.target_layer)] = y
-                                            else:
-                                                y = module3(y)
+                        for name2, module2 in module1._modules.items():
+                            if name2 == str(self.target_layer - 1):
+                                if name2 == '0':
+                                    for name3, module3 in module2._modules.items():
+                                        if name3 == '7':
+                                            for name4, module4 in module3._modules.items():
+                                                if name4 == '4':
+                                                    y = module4(y)
+                                                    y.register_hook(self._save_gradient)
+                                                    outputs += [y]
+                                                    features[str(self.target_layer)] = y
+                                                else:
+                                                    y = module4(y)
+                                        else:
+                                            y = module3(y)
                                 else:
-                                    y = module2(y)
-                                    features[str(int(name2) + 1)] = y
-                        else:
-                            y = module1(y)
-                        
+                                    for name3, module3 in module2._modules.items():
+                                        if name3 == '3':
+                                            y = module3(y)
+                                            y.register_hook(self._save_gradient)
+                                            outputs += [y]
+                                            features[str(self.target_layer)] = y
+                                        else:
+                                            y = module3(y)
+                            else:
+                                y = module2(y)
+                                features[str(int(name2) + 1)] = y
                 features = list(features.values())
 
             elif name == 'head':
@@ -231,13 +229,12 @@ class SSD300VGG16FeatureExtractor:
 
             elif name == 'anchor_generator':
                 anchors = module(input_imgs, features)
-        
         head_outputs['cls_logits'] = torch.cat(head_outputs['cls_logits'], dim=1)
         head_outputs['bbox_regression'] = torch.cat(head_outputs['bbox_regression'], dim=1)
         detections = self._postprocess_detections(head_outputs, anchors, input_imgs.image_sizes)
         detections = self.transform.postprocess(detections, input_imgs.image_sizes, original_image_sizes)
 
-        return input_imgs, outputs, detections, raw_boxes_per_scale, anchors
+        return outputs, detections, raw_boxes_per_scale, self.loc, self.overall_box_id
 
 class ModelOutputs:
     """Class for making a forward pass, and getting:
@@ -245,10 +242,10 @@ class ModelOutputs:
     2. Activations from intermeddiate targetted layers.
     3. Gradients from intermeddiate targetted layers."""
 
-    def __init__(self, model, num_classes, bbox):
+    def __init__(self, model, baseline, num_classes, bbox):
         self.model = model
         if 'SSD' in model._modules['backbone'].__class__.__name__:
-            self.feature_extractor = SSD300VGG16FeatureExtractor(model, num_classes, bbox)
+            self.feature_extractor = SSD300VGG16FeatureExtractor(model, baseline,  num_classes, bbox)
 
         else:
             raise ValueError("Model is not supported! Please input SSD model!")
@@ -259,6 +256,6 @@ class ModelOutputs:
     def __call__(self, input_imgs, zero_out=False):
         # Find which layer the target bounding box is at
         self.feature_extractor.find_target_layer(input_imgs)
-        transformed_input, target_activations, detections, raw_boxes_per_scale, anchors = self.feature_extractor(input_imgs, zero_out)
+        target_activations, detections, raw_boxes_per_scale, loc, overall_box_id = self.feature_extractor(input_imgs, zero_out)
 
-        return transformed_input, target_activations, detections, raw_boxes_per_scale, anchors
+        return target_activations, detections, raw_boxes_per_scale, loc, overall_box_id
