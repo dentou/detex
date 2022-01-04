@@ -1,3 +1,5 @@
+from detex import explainers
+import torch
 import h5py
 import os
 import numpy as np
@@ -6,12 +8,17 @@ import numpy as np
 def collapse_exp(exp):
     if (exp[..., 0] == exp[..., 1]).all() and (exp[..., 0] == exp[..., 2]).all():
         return exp[..., 0:1]
+    elif (exp[..., 0] == 0).all() and (exp[..., 1] == 0).all():
+        return exp[..., -1:]
     else:
         return exp
 
-def expand_exp(exp):
+def expand_exp(exp, mode='repeat'):
     if isinstance(exp, np.ndarray) and exp.shape[-1] == 1:
-        exp = np.repeat(exp, 3, axis=-1)
+        if mode == 'repeat':
+            exp = np.repeat(exp, 3, axis=-1)
+        elif mode == 'zeropad':
+            exp = np.stack([np.zeros_like(exp), np.zeros_like(exp), exp],axis=-1)
     return exp
 
 
@@ -31,6 +38,7 @@ def save_attribution(attribution: np.ndarray, filepath: str, meta: dict):
             label: int, for visualization
             score: float, for visualization
     """
+    explainer_engine = meta["explainer_engine"]
     img_id = meta["img_id"]
     box_id = meta["box_id"]
     box_attr = meta["box_attr"]
@@ -50,6 +58,7 @@ def save_attribution(attribution: np.ndarray, filepath: str, meta: dict):
         g_box_id.attrs["box"] = box
         g_box_id.attrs["label"] = label 
         g_box_id.attrs["score"] = score
+        g_box_id.attrs["explainer_engine"] = explainer_engine
 
 
         attribution = collapse_exp(attribution)
@@ -112,5 +121,8 @@ def load_attribution(filepath, meta):
             meta[k] = v
 
         attribution = np.array(g_box_id[str(box_attr)])
-        attribution = expand_exp(attribution)
+        if meta["explainer_engine"] == 'kSHAP':
+            attribution = expand_exp(attribution)
+        elif meta["explainer_engine"] == 'XGrad-CAM' or meta["explainer_engine"] == 'Grad-CAM++':
+            attribution = expand_exp(attribution, mode='zeropad')
     return attribution, meta
