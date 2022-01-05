@@ -97,7 +97,10 @@ Correct detection
 Incorrect detection
 ![Incorrect detection](./docs/images/grad-cam++/gradcampp_100i_0_7189_66.png)
 #### Pixel flipping
-
+ - XGrad-CAM: Area Under the Curve (trapezoidal rule): ~ 9.457 (unnormalized), or 0.0372 (normalized against 254 boxes) 
+![Pixel flipping for XGrad-CAM in 100 images](./docs/images/xgrad-cam/pixel_flipping_xgradcam_100i.png)
+ - Grad-CAM++: Area Under the Curve (trapezoidal rule): ~ 13.024 (unnormalized), or 0.0512 (normalized against 254 boxes) 
+![Pixel flipping for Grad-CAM++ in 100 images](./docs/images/grad-cam++/pixel_flipping_gradcampp_100i.png)
 #### Localization metrics
 XGrad-CAM:
  - Positive attribution inside box (against all positive attribution): 18.65%
@@ -111,3 +114,9 @@ Grad-CAM++:
  - On Intel(R) Core(TM) i5-7360U CPU @ 2.30GHz
  - 100 images (254 boxes): 38 minutes
  - Average time per explanation (i.e. box): ~9 seconds
+
+## Pixel flipping comparisons
+![Pixel flipping results summary for 100 images](./docs/images/pixel_flip_summarize.png)
+- All three methods yield on point explanations for detected objects
+- kSHAP is slightly better than the two Grad-CAM methods
+- Among Grad-CAM methods, XGrad-CAM is slightly better than Grad-CAM++
