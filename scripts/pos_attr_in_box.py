@@ -92,8 +92,10 @@ if __name__ == "__main__":
         results["box_area"].append(box_area)
 
     
-
-    result_dir = f"data/results/{engine.lower()}/pos_attr_in_box_{filename}"
+    if engine == "XGrad-CAM" or engine == "Grad-CAM++":
+        result_dir = f"data/results/cam/{engine.lower()}/pos_attr_in_box_{filename}"
+    else:
+        result_dir = f"data/results/{engine.lower()}/pos_attr_in_box_{filename}"
     os.makedirs(result_dir, exist_ok=True)
 
     total_num_pos = sum(results["num_pos"])
