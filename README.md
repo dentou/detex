@@ -116,6 +116,9 @@ Grad-CAM++:
  - Average time per explanation (i.e. box): ~9 seconds
 
 ## Pixel flipping comparisons
+- Random flip: Area Under the Curve (trapezoidal rule): ~ 82.188 (unnormalized), or 0.324 (normalized against 254 boxes)
+![Random flipping in 100 images](./docs/images/random/score_plot.png)
+- Summary plot
 ![Pixel flipping results summary for 100 images](./docs/images/pixel_flip_summarize.png)
 - All three methods yield on point explanations for detected objects
 - kSHAP is slightly better than the two Grad-CAM methods
