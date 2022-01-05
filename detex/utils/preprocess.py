@@ -1,5 +1,3 @@
-import torch
-import numpy as np
 from .convert import tensorimg_to_npimg
 from skimage import segmentation
 

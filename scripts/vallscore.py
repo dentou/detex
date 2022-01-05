@@ -35,11 +35,3 @@ if __name__=="__main__":
 
 
     plt.show()
-    # pixel_flip_dir = f"data/results/kshap/pixel_flip_{filename}"
-    # os.makedirs(pixel_flip_dir, exist_ok=True)
-
-    # scorefile = os.path.join(pixel_flip_dir, f"allscore.npy")
-    # np.save(scorefile, allscores)
-
-    # figfile = os.path.join(pixel_flip_dir, f"score_plot.png")
-    # fig.savefig(figfile, dpi=300)

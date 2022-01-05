@@ -1,5 +1,3 @@
-from detex import explainers
-import torch
 import h5py
 import os
 import numpy as np

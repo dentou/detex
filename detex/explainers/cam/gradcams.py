@@ -1,10 +1,7 @@
 import torch
 from torch.nn import functional as F
-from torchvision.models.detection import _utils as det_utils
-from torchvision.ops import boxes as box_ops
 import numpy as np
 from .unitcam import UnitCAM
-from .ssd_extractor import SSD300VGG16FeatureExtractor
 
 
 class GradCAM(UnitCAM):

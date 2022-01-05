@@ -1,29 +1,17 @@
 from re import S
-from captum import attr
-from torch.utils import data
 import context
 from detex.utils import (
     load_attribution,
     collect_metas,
-    tensorimg_to_npimg,
-    compute_idx_to_class,
-    draw_img_boxes,
     collapse_exp,
 )
 import argparse
-from detex.models import SSDWrapper
 import h5py
 
-import torch
 import numpy as np
-import torchvision
 
 import os
-from matplotlib import pyplot as plt
 
-from detex.utils.visualization import show_imgs, visualize_attribution
-import torchvision.transforms.functional as TF
-import torch.utils.data as TUD
 from tqdm.auto import tqdm
 from pathlib import Path
 

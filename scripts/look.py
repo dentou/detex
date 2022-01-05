@@ -3,16 +3,11 @@ import context
 from detex.utils import (
     load_attribution,
     collect_metas,
-    tensorimg_to_npimg,
-    compute_idx_to_class,
-    draw_img_boxes,
 )
 import h5py
 
 import argparse
 
-import torch
-import numpy as np
 import torchvision
 
 import os
