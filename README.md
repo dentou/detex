@@ -30,6 +30,23 @@ python scripts/kernelshap_ssd.py \
     --result-file="data/results/kshap/kshap_2000s_100i.hdf5"
 ```
 
+### XGrad-CAM/Grad-CAM++
+**Example command**: Run XGrad-CAM for the first 100 COCO images, for thresholding value of 0.5, and store results.
+```bash
+python scripts/gradcam_ssd.py \
+    --first-images=100 \
+    --explainer-engine="XGrad-CAM" \
+    --baseline-value=0.5 \
+    --result-file="data/results/cam/xgradcam_100i.hdf5"
+```
+**Example command**: Run Grad-CAM++ for the first 100 COCO images, for thresholding value of 0.5, and store results.
+```bash
+python scripts/gradcam_ssd.py \
+    --first-images=100 \
+    --explainer-engine="Grad-CAM++" \
+    --baseline-value=0.5 \
+    --result-file="data/results/cam/gradcampp_100i.hdf5"
+```
 ## Results
 ### Kernel SHAP
 - Kernel SHAP trains a linear explanation model to locally approximate the true model (using LIME framework)
@@ -60,3 +77,49 @@ Incorrect detection
  - Batch size = 128
  - 100 images (254 boxes): 2 hours 6 minutes
  - Average time per explanation (i.e. box): ~30 seconds
+
+
+### XGrad-CAM/Grad-CAM++
+- Implement two Class Activation Mapping (CAM) methods: XGrad-CAM and Grad-CAM++
+- These two methods are the generalized version of Grad-CAM
+- Grad-CAM is a model-specific local XAI method that extracts interested CAM visualization by weighting the feature map at one particular convolutional layer with its gradient caused by backpropagating a target prediction
+- Runtime grows exponentially with the model complexity and linearly with the number of pixels
+
+#### Examples:
+- XGrad-CAM
+Correct detection
+![Correct detection](./docs/images/xgrad-cam/xgradcam_100i_0_7089_66.png)
+Incorrect detection
+![Incorrect detection](./docs/images/xgrad-cam/xgradcam_100i_0_7189_66.png)
+- Grad-CAM++
+Correct detection
+![Correct detection](./docs/images/grad-cam++/gradcampp_100i_0_7089_66.png)
+Incorrect detection
+![Incorrect detection](./docs/images/grad-cam++/gradcampp_100i_0_7189_66.png)
+#### Pixel flipping
+ - XGrad-CAM: Area Under the Curve (trapezoidal rule): ~ 9.457 (unnormalized), or 0.0372 (normalized against 254 boxes) 
+![Pixel flipping for XGrad-CAM in 100 images](./docs/images/xgrad-cam/pixel_flipping_xgradcam_100i.png)
+ - Grad-CAM++: Area Under the Curve (trapezoidal rule): ~ 13.024 (unnormalized), or 0.0512 (normalized against 254 boxes) 
+![Pixel flipping for Grad-CAM++ in 100 images](./docs/images/grad-cam++/pixel_flipping_gradcampp_100i.png)
+#### Localization metrics
+XGrad-CAM:
+ - Positive attribution inside box (against all positive attribution): 18.65%
+ - Box coverage:  64.74%
+ - IoU: 16.93%
+Grad-CAM++:
+ - Positive attribution inside box (against all positive attribution): 14.59%
+ - Box coverage:  72.96%
+ - IoU: 13.84%
+#### Runtime
+ - On Intel(R) Core(TM) i5-7360U CPU @ 2.30GHz
+ - 100 images (254 boxes): 38 minutes
+ - Average time per explanation (i.e. box): ~9 seconds
+
+## Pixel flipping comparisons
+- Random flip (seed=0): Area Under the Curve (trapezoidal rule): ~ 82.188 (unnormalized), or 0.324 (normalized against 254 boxes)
+![Random flipping in 100 images](./docs/images/random/score_plot.png)
+- Summary plot
+![Pixel flipping results summary for 100 images](./docs/images/pixel_flip_summarize.png)
+- All three methods yield on point explanations for detected objects
+- kSHAP is slightly better than the two Grad-CAM methods
+- Among Grad-CAM methods, XGrad-CAM is slightly better than Grad-CAM++

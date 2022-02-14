@@ -5,9 +5,7 @@ import context
 from detex.utils import (
     load_attribution,
     collect_metas,
-    tensorimg_to_npimg,
     compute_idx_to_class,
-    draw_img_boxes,
     collapse_exp,
 )
 import argparse
@@ -21,14 +19,13 @@ import torchvision
 import os
 from matplotlib import pyplot as plt
 
-from detex.utils.visualization import show_imgs, visualize_attribution
 import torchvision.transforms.functional as TF
 import torch.utils.data as TUD
 from tqdm.auto import tqdm
 from pathlib import Path
 
 
-class PixelFlipper(torch.utils.data.Dataset):
+class TopPixelFlipper(torch.utils.data.Dataset):
     def __init__(
         self, img, attribution, flip_val, ratios=np.linspace(0, 1, 11).tolist()
     ) -> None:
@@ -72,6 +69,48 @@ class PixelFlipper(torch.utils.data.Dataset):
 
         return img
 
+class RandomPixelFlipper(torch.utils.data.Dataset):
+    def __init__(
+        self, img, flip_val, ratios=np.linspace(0, 1, 11).tolist()
+    ) -> None:
+        super().__init__()
+        assert isinstance(img, np.ndarray)
+        assert img.ndim == 3
+        self.img = img
+        self.total_num_pixels = np.prod(img.shape[:-1])
+
+        self.flip_val = flip_val
+        self.ratios = ratios
+
+        self._compute_indices()
+
+    def _compute_indices(self):
+        self.random_ids = np.unravel_index(
+            np.random.permutation(len(self.img[:,:,0].flatten())), self.img[:,:,0].shape
+        )[:2]
+
+    def __len__(self):
+        return len(self.ratios)
+
+    def __getitem__(self, idx):
+
+        img = self.get_numpy(idx)
+
+        return TF.to_tensor(img)
+
+    def get_numpy(self, idx):
+        img = self.img.copy()
+
+        ratio = self.ratios[idx]
+        num_pixels = int(ratio * self.total_num_pixels)
+        mask = np.zeros_like(img, dtype=bool)
+        flipped_ids = tuple(t[:num_pixels] for t in self.random_ids)
+        mask[flipped_ids] = True
+
+        img[mask] = self.flip_val
+
+        return img
+
 
 if __name__ == "__main__":
 
@@ -79,8 +118,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "attribution_file",
         type=str,
+        default=None,
         help="Path to hdf5 attribution file",
     )
+
+    parser.add_argument(
+        "--flip-mode",
+        type=str,
+        default="top",
+        help="top or random",
+    )
+
+    parser.add_argument(
+        "--random-seed",
+        nargs="?",
+        type=int,
+        default=42,
+        help="Randomization seed for random flip",
+    )
+
     parser.add_argument(
         "--ratio-points",
         nargs="?",
@@ -125,19 +181,19 @@ if __name__ == "__main__":
 
     print(args)
 
-    assert os.path.isfile(args.attribution_file), f"Cannot find file: {args.attribution_file}"
+    np.random.seed(args.random_seed)
+
     filepath = os.path.abspath(args.attribution_file)
-    
-   
-
-    # filepath = "data/results/kshap/kshap_2000s_100i_colab.hdf5"
-
+    mode = args.flip_mode
+    assert os.path.isfile(args.attribution_file), f"Cannot find file: {args.attribution_file}"
     filename = Path(filepath).resolve().stem
+
 
     ROOT_DIR = os.path.abspath(".")
     DATA_DIR = os.path.join(ROOT_DIR, "data")
-
     print(DATA_DIR)
+
+    # filepath = "data/results/kshap/kshap_2000s_100i_colab.hdf5"
 
     VAL_IMG_DIR = os.path.join(DATA_DIR, "val2017")
     VAL_ANN_FILE = os.path.join(DATA_DIR, "annotations", "instances_val2017.json")
@@ -156,40 +212,75 @@ if __name__ == "__main__":
 
     model.to(device)
 
-    metas = []
-    with h5py.File(filepath, "r") as h:
-        metas = collect_metas(h)
 
-    idx_to_class = compute_idx_to_class(val_set.coco)
+    if mode == "top":
+        metas = []
+        with h5py.File(filepath, "r") as h:
+            metas = collect_metas(h)
 
-    allscores = []
+        idx_to_class = compute_idx_to_class(val_set.coco)
+        allscores = []
+        for meta in tqdm(metas, desc="Picking meta:"):
+            attribution, meta = load_attribution(filepath, meta)
 
-    for meta in tqdm(metas, desc="Picking meta:"):
-        attribution, meta = load_attribution(filepath, meta)
+            img_id, box_id, box_attr, engine = meta["img_id"], meta["box_id"], meta["box_attr"], meta["explainer_engine"]
 
-        img_id, box_id, box_attr = meta["img_id"], meta["box_id"], meta["box_attr"]
+            img_orig = val_set[img_id][0]
 
-        img_orig = val_set[img_id][0]
+            img = np.transpose(img_orig.detach().cpu().numpy().squeeze(), (1, 2, 0))
 
-        img = np.transpose(img_orig.detach().cpu().numpy().squeeze(), (1, 2, 0))
+            forward_func = model.make_blackbox("captum", box_id, box_attr, device)
 
-        forward_func = model.make_blackbox("captum", box_id, box_attr, device)
+            ratios = np.linspace(0, 1, args.ratio_points).tolist()
 
-        ratios = np.linspace(0, 1, args.ratio_points).tolist()
+            
+            flipper = TopPixelFlipper(img, attribution, flip_val=args.flip_val, ratios=ratios)
 
-        flipper = PixelFlipper(img, attribution, flip_val=args.flip_val, ratios=ratios)
+            flipper_loader = TUD.DataLoader(
+                flipper, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, drop_last=False
+            )
 
-        flipper_loader = TUD.DataLoader(
-            flipper, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, drop_last=False
-        )
+            attrscores = []
+            with torch.no_grad():
+                for batch in tqdm(flipper_loader, desc="Flipping: "):
+                    scores = forward_func(batch)
+                    attrscores.extend(scores.tolist())
 
-        attrscores = []
-        with torch.no_grad():
-            for batch in tqdm(flipper_loader, desc="Flipping: "):
-                scores = forward_func(batch)
-                attrscores.extend(scores.tolist())
+            allscores.append(attrscores)
+    elif mode == "random":
+        metas = []
+        with h5py.File(filepath, "r") as h:
+            metas = collect_metas(h)
 
-        allscores.append(attrscores)
+        idx_to_class = compute_idx_to_class(val_set.coco)
+        allscores = []
+        for meta in tqdm(metas, desc="Picking meta:"):
+            _, meta = load_attribution(filepath, meta)
+
+            img_id, box_id, box_attr = meta["img_id"], meta["box_id"], meta["box_attr"]
+
+            img_orig = val_set[img_id][0]
+
+            img = np.transpose(img_orig.detach().cpu().numpy().squeeze(), (1, 2, 0))
+
+            forward_func = model.make_blackbox("captum", box_id, box_attr, device)
+
+            ratios = np.linspace(0, 1, args.ratio_points).tolist()
+
+            
+            flipper = RandomPixelFlipper(img, flip_val=args.flip_val, ratios=ratios)
+
+            flipper_loader = TUD.DataLoader(
+                flipper, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, drop_last=False
+            )
+
+            attrscores = []
+            with torch.no_grad():
+                for batch in tqdm(flipper_loader, desc="Flipping: "):
+                    scores = forward_func(batch)
+                    attrscores.extend(scores.tolist())
+
+            allscores.append(attrscores)
 
     allscores = np.array(allscores)
     print(allscores)
@@ -205,11 +296,13 @@ if __name__ == "__main__":
     ax.plot(ratios, allscores.sum(axis=0))
     ax.set_xlabel("dropped ratio")
     ax.set_ylabel(f"sum of scores")
+    ax.set_ylim(bottom=0)
     ax.grid()
 
     ax = axs[1]
     ax.set_xlabel("dropped ratio")
     ax.set_ylabel(f"scores")
+    ax.set_ylim(bottom=0)
     ax.grid()
     for i, s in enumerate(allscores):
         meta = metas[i]
@@ -218,8 +311,13 @@ if __name__ == "__main__":
 
     if args.show_legend:
         ax.legend()
-
-    pixel_flip_dir = f"data/results/kshap/pixel_flip_{filename}"
+    if mode == "top":
+        if engine == "XGrad-CAM" or engine == "Grad-CAM++":
+            pixel_flip_dir = f"data/results/cam/{engine.lower()}/pixel_flip_{filename}"
+        else:
+            pixel_flip_dir = f"data/results/{engine.lower()}/pixel_flip_{filename}"
+    elif mode == "random":
+        pixel_flip_dir = f"data/results/random/random_seed{args.random_seed}_flip_{filename}"
     os.makedirs(pixel_flip_dir, exist_ok=True)
 
     scorefile = os.path.join(pixel_flip_dir, f"allscore.npy")

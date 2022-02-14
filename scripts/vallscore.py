@@ -1,11 +1,21 @@
 from matplotlib import pyplot as plt
 import numpy as np
 import os
+import argparse
 from scipy.integrate import simps
 
 
 if __name__=="__main__":
-    allscores = np.load("data/results/kshap/pixel_flip_kshap_2000s_100i_colab/allscore.npy")
+    parser = argparse.ArgumentParser(description="Validate Score")
+    parser.add_argument(
+        "score_file",
+        type=str,
+        default=None,
+        help="Path to npy score file",
+    )
+    args = parser.parse_args()
+    assert os.path.isfile(args.score_file), f"Cannot find file: {args.score_file}"
+    allscores = np.load(args.score_file)
 
     fig = plt.figure(figsize=(6, 6))
     ax = plt.gca()
@@ -25,11 +35,3 @@ if __name__=="__main__":
 
 
     plt.show()
-    # pixel_flip_dir = f"data/results/kshap/pixel_flip_{filename}"
-    # os.makedirs(pixel_flip_dir, exist_ok=True)
-
-    # scorefile = os.path.join(pixel_flip_dir, f"allscore.npy")
-    # np.save(scorefile, allscores)
-
-    # figfile = os.path.join(pixel_flip_dir, f"score_plot.png")
-    # fig.savefig(figfile, dpi=300)

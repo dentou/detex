@@ -2,28 +2,25 @@ import warnings
 import context
 import os
 import torchvision
-import torchvision.transforms.functional as TF
 import torch
 
-import captum
 from captum.attr import visualization as captumvis
 
-from detex.models import SSDWrapper
+from detex.explainers.cam.gradcams import XGradCAM, GradCAMPlusPlus
 import numpy as np
 import argparse
 
 from detex.utils import (
     draw_img_boxes,
     compute_idx_to_class,
-    set_seed,
-    segment,
-    collect_detections,
 )
 from detex.utils.convert import tensorimg_to_npimg
 
 from tqdm.auto import tqdm
 
 import seaborn as sns
+from PIL import Image
+from matplotlib import cm
 
 from detex.utils.storage import save_attribution
 
@@ -31,55 +28,51 @@ sns.reset_orig()
 sns.set(rc={"savefig.bbox": "tight", "figure.dpi": 300, "savefig.dpi": 300})
 
 
-class KernelShapExplainer:
-    def __init__(self, n_samples=2000, baseline=0.5, perturbations_per_eval=16):
-        self.n_samples = n_samples
-        self.baseline = baseline
-        self.perturbations_per_eval = perturbations_per_eval
+class GradCAMExplainer:
+    def __init__(self, model, baseline, num_classes, explainer_engine, device):
+        if 'cuda' in device.type:
+            self.use_cuda = True
+        else:
+            self.use_cuda = False
+        self.model = model
+        self.model.score_thresh = baseline
+        self.explainer_engine = explainer_engine
+        if explainer_engine == 'XGrad-CAM':
+            self.explainer = XGradCAM(self.model, baseline, num_classes, self.use_cuda)
+        elif explainer_engine == 'Grad-CAM++':
+            self.explainer = GradCAMPlusPlus(self.model, baseline, num_classes, self.use_cuda)
 
-    @torch.no_grad()
-    def explain_single(self, img, segment_mask, model, box_id, box_attr, seed):
+    def explain_single(self, img, label, bbox):
 
         assert len(img.shape) == 3, img.shape  # (C, H, W)
         assert torch.is_tensor(img)
         assert img.shape[0] == 3
         assert img.dtype == torch.float, img.dtype
+        assert torch.is_tensor(bbox)
+        assert len(bbox) == 4 # (xmin, ymin, xmax, ymax)
+        assert (bbox[0] < bbox[2] and bbox[1] < bbox[3]) # xmin < xmax, ymin < ymax
 
-        assert len(segment_mask.shape) == 3, segment_mask.shape  # (1, H, W)
+        cam_cls, cam_box, output, index, overall_box_id = self.explainer(img, False, bbox, label)
 
-        f = model.make_blackbox("captum", box_id, box_attr, device)
-        ks = captum.attr.KernelShap(f)
+        cmap = cm.get_cmap('jet')
+        cam = Image.fromarray((cam_cls + cam_box) / 2 )
+        img1 = Image.fromarray(tensorimg_to_npimg(img))
+        overlay = cam.resize(img1.size, resample=Image.BILINEAR)
+        overlay = np.asarray(overlay)
+        attribution = (255 * cmap(overlay ** 2)[:, :, :3]).astype(np.uint8)
 
-        set_seed(seed)
-        feature_mask = segment_mask.unsqueeze(0)
+        return attribution, output, index, overall_box_id
 
-        input_img = img.unsqueeze(0)
-
-        attributions = ks.attribute(
-            input_img,
-            feature_mask=feature_mask,
-            baselines=self.baseline,
-            n_samples=self.n_samples,
-            perturbations_per_eval=self.perturbations_per_eval,
-            show_progress=True,
-        ).cpu()
-
-        return attributions
-
-    def explain_coco(self, dataset, model, img_id_list, filepath=None, visdir=None):
+    def explain_coco(self, dataset, img_id_list, filepath=None, visdir=None):
         for img_id in tqdm(img_id_list, desc="Picking img with id: "):
 
+            model.zero_grad()
             img_orig = dataset[img_id][0]  # (C, H, W)
 
             img = img_orig.clone()
 
-            spixel_mask = segment(img)  # (H, W)
-            segment_mask = TF.to_tensor(spixel_mask)  # (1, H, W)
-
             with torch.no_grad():
-                orig_dets = model(img.unsqueeze(0).to(device))
-                dets = collect_detections(orig_dets)
-                del orig_dets
+                dets = self.model(img.unsqueeze(0).to(device))
                 torch.cuda.empty_cache()
 
             if not dets:
@@ -88,39 +81,38 @@ class KernelShapExplainer:
                 )
                 continue
 
-            total_box_nums = len(dets[0]["box_ids"])
+            total_box_nums = len(dets[0]["boxes"])
             for box_num in tqdm(range(total_box_nums), desc="Explaning box_num: "):
-                box_id = dets[0]["box_ids"][box_num]  # only have 1 image
-                class_label = dets[0]["labels"][box_num]
                 box = dets[0]["boxes"][box_num]
-                score = dets[0]["scores"][box_num]
-                box_attr = 4 + class_label
+                score = dets[0]['scores'][box_num]
+                index = dets[0]['labels'][box_num]
 
-                attribution = self.explain_single(
+                attribution, _, index, overall_box_id = self.explain_single(
                     img,
-                    segment_mask=segment_mask,
-                    model=model,
-                    box_id=box_id,
-                    box_attr=box_attr,
-                    seed=42,
-                )  # (1, C, H, W)
+                    label=index,
+                    bbox=box
+                )  # (H, W, C)
+                
 
                 if filepath:
 
-                    attribution_save = np.transpose(
-                        attribution.squeeze().cpu().detach().numpy(), (1, 2, 0)
-                    )[
-                        None
-                    ]  # (1, H, W, C)
+                    attribution_save = attribution[None]  # (1, H, W, C)
+
+                    if torch.is_tensor(index):
+                        index = int(index.detach().numpy())
+                    if torch.is_tensor(box):
+                        box = list(box.detach().numpy())
+                    if torch.is_tensor(score):
+                        score = float(score)
 
                     meta = {
-                        "explainer_engine": 'kSHAP',
+                        "explainer_engine": self.explainer_engine,
                         "img_id": img_id,
-                        "box_id": box_id,
-                        "box_attr": box_attr,
+                        "box_id": overall_box_id,
+                        "box_attr": index + 4,
                         "box_num": box_num,
                         "box": box,
-                        "label": class_label,
+                        "label": index,
                         "score": score,
                     }
                     save_attribution(attribution_save, filepath, meta)
@@ -144,7 +136,7 @@ class KernelShapExplainer:
                         pred={
                             "boxes": [box],
                             "scores": [score],
-                            "labels": [class_label],
+                            "labels": [index],
                             "box_nums": [box_num],
                         },
                     )
@@ -158,13 +150,16 @@ class KernelShapExplainer:
                         alpha_overlay=0.5,
                         fig_size=(8, 8),
                         titles=[
-                            f"[{box_id}]({box_num}){idx_to_class[class_label]}: {score}",
-                            f"KSHAP(box_attr={box_attr})",
+                            f"[{overall_box_id}]({box_num}){idx_to_class[index]}: {score}",
+                            f"{self.explainer_engine}(box_attr={index + 4})",
                         ],
                         outlier_perc=1,
                         use_pyplot=False,
                     )
-                    figname = f"kshap_{img_id}_{box_id}_{box_attr}.png"
+                    if self.explainer_engine == "XGrad-CAM":
+                        figname = f"xgradcam_{img_id}_{overall_box_id}_{index + 4}.png"
+                    elif self.explainer_engine == "Grad-CAM++":
+                        figname = f"gradcampp_{img_id}_{overall_box_id}_{index + 4}.png"
                     os.makedirs(visdir, exist_ok=True)
                     figpath = os.path.join(visdir, figname)
                     print(f"Saving image to: {figpath}")
@@ -173,26 +168,21 @@ class KernelShapExplainer:
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description="KernelSHAP")
+    parser = argparse.ArgumentParser(description="GradCAM")
+    parser.add_argument(
+        "--explainer-engine",
+        default='XGrad-CAM',
+        type=str,
+        help="Explain with XGrad-CAM or Grad-CAM++",
+    )
+
     parser.add_argument(
         "--first-images",
         type=int,
         default=1,
-        help="Run kshap on first x images in the dataset",
-    )
-    parser.add_argument(
-        "--batch-size",
-        default=16,
-        type=int,
-        help="Batch size for model pass",
+        help="Run XGrad-CAM/Grad-CAM++ on first x images in the dataset",
     )
 
-    parser.add_argument(
-        "--shap-samples",
-        default=2000,
-        type=int,
-        help="Number of samples for approximating Shapley values",
-    )
     parser.add_argument(
         "--baseline-value",
         default=0.5,
@@ -236,11 +226,12 @@ if __name__ == "__main__":
         transform=torchvision.transforms.ToTensor(),
     )
 
+    NUM_CLASSES = 91
+
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     print(f"Using device: {device}")
 
-    model = SSDWrapper(torchvision.models.detection.ssd300_vgg16(pretrained=True))
-    model.eval()
+    model = torchvision.models.detection.ssd300_vgg16(pretrained=True)
 
     model.to(device)
 
@@ -251,18 +242,19 @@ if __name__ == "__main__":
     else:
         VISDIR = None
 
-    KSHAP_FILE = args.result_file
+    CAM_FILE = args.result_file
 
-    kernelshap = KernelShapExplainer(
-        n_samples=args.shap_samples,
+    gradcam = GradCAMExplainer(
+        model=model,
         baseline=args.baseline_value,
-        perturbations_per_eval=args.batch_size,
+        num_classes=NUM_CLASSES,
+        explainer_engine=args.explainer_engine,
+        device=device
     )
 
-    kernelshap.explain_coco(
+    gradcam.explain_coco(
         val_set,
-        model,
         img_id_list,
         visdir=VISDIR,
-        filepath=KSHAP_FILE,
+        filepath=CAM_FILE,
     )

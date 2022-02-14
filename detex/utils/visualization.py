@@ -119,6 +119,9 @@ def visualize_attribution(dataset, attribution, meta, figfile=None, show=True):
     else:
         attr_vis = attribution.squeeze()
 
+    if np.allclose(attr_vis, 0):
+        attr_vis += 1
+
     img_id, box_id, box_attr = meta["img_id"], meta["box_id"], meta["box_attr"]
     box_num, box, score, class_label = meta["box_num"], meta["box"], meta["score"], meta["label"]
 
@@ -128,7 +131,12 @@ def visualize_attribution(dataset, attribution, meta, figfile=None, show=True):
 
     idx_to_class = compute_idx_to_class(dataset.coco)
 
-
+    if meta['explainer_engine'] == 'XGrad-CAM' or meta['explainer_engine'] == 'Grad-CAM++':
+        cmap = 'jet'
+        sign = 'positive'
+    else:
+        cmap = None
+        sign = 'all'
 
     img_det_vis = draw_img_boxes(
         img_orig_vis,
@@ -145,16 +153,17 @@ def visualize_attribution(dataset, attribution, meta, figfile=None, show=True):
         attr_vis,
         img_det_vis,
         ["original_image", "blended_heat_map"],
-        ["all", "all"],
+        signs=[sign,sign],
         show_colorbar=True,
         alpha_overlay=0.5,
         fig_size=(8, 8),
         titles=[
             f"[{box_id}]({box_num}){idx_to_class[class_label]}: {score}",
-            f"KSHAP(box_attr={box_attr})",
+            f"{meta['explainer_engine']}(box_attr={box_attr})",
         ],
         outlier_perc=1,
         use_pyplot=False,
+        cmap=cmap
     )
     
     if figfile is not None:
